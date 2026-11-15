@@ -5,6 +5,7 @@ import { $, $$, esc, ICON, toast, sheetOpen } from './ui.js';
 import { homeView, gradeView, albumView, classView, uploadView, openLightbox, openProfile, notFound } from './views.js';
 import { gamesView, gameView } from './games.js';
 import { adminView, handleAct } from './admin.js';
+import { presentView } from './present.js';
 
 // Záložní URL, když se fotka z Disku nenačte
 window.__imgErr = img => {
@@ -22,6 +23,7 @@ const routes = [
   [/^\/hry\/([a-z]+)$/, m => gameView(m[1])],
   [/^\/pridat$/, (m, q) => uploadView(q)],
   [/^\/admin$/, () => adminView()],
+  [/^\/promitani$/, () => presentView()],
 ];
 // Obrazovky, které se při načtení nových dat na pozadí nepřekreslují (rozepsaný formulář, hra)
 const ACTIVE = /^\/(pridat|hry\/|admin)/;
@@ -90,7 +92,6 @@ window.addEventListener('hashchange', () => render());
 function shell() {
   document.title = CONFIG.APP_NAME;
   $('#app-name').textContent = CONFIG.APP_NAME;
-  $('#app-class').textContent = CONFIG.CLASS_YEAR ? '’' + String(CONFIG.CLASS_YEAR).slice(-2) : CONFIG.CLASS_NAME;
   const tabs = [['kronika', '#/', ICON.book, 'Kronika'], ['album', '#/album', ICON.image, 'Fotoalbum'], ['trida', '#/trida', ICON.users, 'Naše třída'], ['hry', '#/hry', ICON.game, 'Hry']];
   $('.tabbar-in').innerHTML = tabs.map(([k, h, i, l]) => `<a href="${h}" data-tab="${k}">${i}<span>${l}</span></a>`).join('');
 }

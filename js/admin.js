@@ -2,7 +2,7 @@
 import * as api from './api.js';
 import {
   S, LS, COLORS, gradeList, gradeOf, eventsOf, photosOfEvent, albumPhotos, imgSrc, cmPhoto, person, ids, uid,
-  classmates, eventById, photoById, save, remove, uploadPhoto, load, quizCheck, inQuiz, photoGrade,
+  classmates, eventById, photoById, save, remove, uploadPhoto, load, quizCheck, inQuiz, photoGrade, inShow, hasFlag, withFlag,
 } from './store.js';
 import { $, $$, esc, fmtDate, ICON, scribble, openForm, toast, closeSheet } from './ui.js';
 import { avatar } from './views.js';
@@ -12,6 +12,7 @@ let tab = 'inbox';
 let photoFilter = 'all';
 let quizFilter = 'tip';   // výběr fotek do hry: tip | sel | 1..9
 let quizN = 60;
+let showGrade = 1;        // výběr fotek k promítání: zobrazená třída
 
 const gradeOpts = (withZero = true) => [...(withZero ? [{ v: 0, l: '— Nezařazeno (ke zařazení) —' }] : []), ...gradeList().map(g => ({ v: g.n, l: `${g.title} (${g.years})` }))];
 const eventOpts = () => [{ v: '', l: '— bez události —' }, ...gradeList().flatMap(g => eventsOf(g.n).map(e => ({ v: e.id, l: `${g.n}. tř. · ${e.title}` })))];
@@ -61,12 +62,13 @@ export function adminView() {
     ['events', 'Události'],
     ['photos', 'Fotky'],
     ['quiz', `Hra: Poznej rok <i>${S.db.photos.filter(inQuiz).length}</i>`],
+    ['show', `Promítání <i>${S.db.photos.filter(inShow).length}</i>`],
     ['grades', 'Ročníky'],
     ['classmates', 'Spolužáci'],
     ['quotes', 'Hlášky'],
     ['scores', 'Skóre'],
   ];
-  const panels = { inbox: () => inboxPanel(inbox), upload: uploadPanel, import: importPanel, events: eventsPanel, photos: photosPanel, quiz: quizPanel, grades: gradesPanel, classmates: classmatesPanel, quotes: quotesPanel, scores: scoresPanel };
+  const panels = { inbox: () => inboxPanel(inbox), upload: uploadPanel, import: importPanel, events: eventsPanel, photos: photosPanel, quiz: quizPanel, show: showPanel, grades: gradesPanel, classmates: classmatesPanel, quotes: quotesPanel, scores: scoresPanel };
   return {
     html: `<section class="page-head compact">
       <span class="pill admin-pill">${ICON.lock} Admin mód${api.DEMO ? ' · demo' : ''}</span>
@@ -108,6 +110,7 @@ function mountPanel() {
   if (tab === 'upload') mountUpload();
   if (tab === 'import') mountImport();
   if (tab === 'quiz') mountQuiz();
+  if (tab === 'show') mountShow();
   if (tab === 'photos') $$('[data-pf]').forEach(b => b.onclick = () => { photoFilter = b.dataset.pf; done(); });
   if (tab === 'scores') $$('[data-del-score]').forEach(b => b.onclick = async () => {
     if (!confirm('Smazat tento záznam skóre?')) return;
@@ -183,77 +186,240 @@ async function mountImport() {
     box.innerHTML = `<b>Žádný balíček k importu</b><p class="fine">Import funguje, když vedle aplikace leží složka <code>import/</code> se souborem <code>import.json</code>. Spusť ho z počítače (lokálně), ne z GitHub Pages – fotky na GitHub nepatří.</p>`;
     return;
   }
+  try { await load(); } catch {}   // čerstvý stav z tabulky
+
+  const norm = t => String(t || '').normalize('NFC').trim().toLowerCase();
+  const key = (g, t) => `${Number(g)}|${norm(t)}`;
+  const cnt = id => S.db.photos.filter(p => p.eventId === id).length;
   const total = pkg.events.reduce((a, e) => a + e.photos.length, 0) + pkg.loose.reduce((a, l) => a + l.photos.length, 0);
-  const doneAt = LS.get('kronika-import-done');
-  box.innerHTML = `<b>${esc(pkg.source)}</b>
-    <p class="fine">${pkg.events.length} událostí a ${total} fotek. Fotky se nahrají jako obsah administrátora (autor „${esc(pkg.author)}“), události se vytvoří v příslušných ročnících. Fotky bez události půjdou do „Ke zařazení“.</p>
-    <div class="adm-list">${pkg.events.map(e => `<div class="adm-row-i" style="${gStyle(e.grade)}"><span class="adm-dot"></span><span><b>${esc(e.title)}</b><small>${e.grade}. třída${e.date ? ' · ' + esc(fmtDate(e.date)) : ''} · ${e.photos.length} fotek</small></span></div>`).join('')}
-    ${pkg.loose.map(l => `<div class="adm-row-i"><span class="adm-dot"></span><span><b>${esc(l.caption)}</b><small>Ke zařazení · ${l.photos.length} fotek</small></span></div>`).join('')}</div>
-    ${api.DEMO ? `<label class="check" style="margin-top:14px"><input type="checkbox" id="imp-clear" checked><span>Nejdřív smazat ukázková data (demo)</span></label>` : ''}
-    ${doneAt ? `<p class="fine" style="margin-top:10px">⚠️ Tento balíček už byl importován ${esc(fmtDate(doneAt))}. Další import vytvoří duplikáty.</p>` : ''}
-    ${pkg.classmates?.length || pkg.quotes?.length ? `<p class="fine" style="margin-top:10px">👋 Navíc ${pkg.classmates?.length || 0} spolužáků a ${pkg.quotes?.length || 0} hlášek (při importu se přidají ti, kteří v kronice ještě nejsou).</p>` : ''}
-    <button class="btn btn-ink btn-block" id="imp-go" style="margin-top:14px">Importovat ${total} fotek${pkg.classmates?.length ? ' a spolužáky' : ''}</button>
-    ${pkg.classmates?.length ? `<button class="btn btn-ghost btn-block" id="imp-people" style="margin-top:8px">Importovat jen spolužáky a hlášky</button>` : ''}
-    <div class="b-log" id="imp-log"></div>`;
+
+  // Co už v tabulce je: zdvojené akce (z dvojitého importu) a kolik fotek ještě chybí
+  const analyze = () => {
+    const groups = {};
+    for (const e of S.db.events) (groups[key(e.grade, e.title)] ||= []).push(e);
+    const keep = {}, dups = [];
+    for (const [k, evs] of Object.entries(groups)) {
+      const sorted = evs.slice().sort((x, y) => cnt(y.id) - cnt(x.id) || String(x.createdAt).localeCompare(String(y.createdAt)));
+      keep[k] = sorted[0];
+      dups.push(...sorted.slice(1));
+    }
+    const dupIds = new Set(dups.map(d => d.id));
+    const dupPhotos = S.db.photos.filter(p => dupIds.has(p.eventId));
+    const plan = [];
+    let remaining = 0;
+    for (const e of pkg.events) {
+      const ex = keep[key(e.grade, e.title)];
+      const todo = e.photos.slice(ex ? cnt(ex.id) : 0);   // fotky jdou popořadě → přeskočit už nahrané
+      remaining += todo.length;
+      plan.push({ e, ex, todo });
+    }
+    for (const l of pkg.loose) {
+      const have = S.db.photos.filter(p => !p.eventId && norm(p.caption) === norm(l.caption)).length;
+      const todo = l.photos.slice(have);
+      remaining += todo.length;
+      plan.push({ loose: l, todo });
+    }
+    return { dups, dupPhotos, plan, remaining };
+  };
+
+  // pojistka proti spuštění importu dvakrát v tomto prohlížeči
+  const LOCK = 'kronika-import-lock';
+  const lockedByOther = () => { const t = Number(LS.get(LOCK) || 0); return Date.now() - t < 30000; };
+
+  // verze importu je uložená v tabulce (list grades, řádek id = „import“) – platí ve všech prohlížečích
+  const pkgVer = String(pkg.version || 1);
+  const sheetVer = () => String(S.db.grades.find(g => String(g.id) === 'import')?.title || '');
+  const markVer = () => save('grades', { id: 'import', title: pkgVer });
+  const oldImport = () => {
+    const ps = S.db.photos.filter(p => p.source === 'admin');
+    return { ps, evs: S.db.events };
+  };
+  const needsReset = () => {
+    const o = oldImport();
+    return (o.ps.length || o.evs.length) && sheetVer() !== pkgVer;
+  };
+
+  const render = () => {
+    const st = analyze();
+    if (needsReset()) {
+      const o = oldImport();
+      box.innerHTML = `<b>${esc(pkg.source)}</b>
+        <div class="imp-warn">V kronice je dřívější import (<b>${o.ps.length}</b> fotek, <b>${o.evs.length}</b> akcí) podle staršího výběru. Nový výběr ho celý nahradí.
+        Fotky od spolužáků a profilovky zůstanou. Smazané soubory půjdou do koše na Google Disku (30 dní jde obnovit).
+        <button class="btn btn-danger btn-block" id="imp-reset" style="margin-top:10px">Nahradit starý import novým výběrem</button></div>
+        <p class="fine" style="margin-top:8px">Smazání trvá asi 10–15 minut. Pak se automaticky spustí nahrávání nového výběru.</p>
+        <div class="b-log" id="imp-log"></div>`;
+      $('#imp-reset').onclick = async e => {
+        if (!confirm(`Smazat ${o.ps.length} dříve importovaných fotek a ${o.evs.length} akcí a nahrát nový výběr?`)) return;
+        if (lockedByOther()) return toast('Import už běží v jiné kartě tohoto prohlížeče.', 'err');
+        const btn = e.target; btn.disabled = true;
+        const beat = setInterval(() => LS.set(LOCK, String(Date.now())), 5000);
+        try {
+          let k = 0;
+          for (const p of o.ps) { k++; btn.innerHTML = `<span class="spin"></span> Mažu fotky ${k} / ${o.ps.length}`; await remove('photos', p.id); }
+          k = 0;
+          for (const ev of o.evs) { k++; btn.innerHTML = `<span class="spin"></span> Mažu akce ${k} / ${o.evs.length}`; await remove('events', ev.id); }
+          await markVer();
+          toast('Starý import smazán ✓ – spouštím nahrávání');
+          try { await load(); } catch {}
+          clearInterval(beat); LS.set(LOCK, null);   // uvolnit pojistku, ať se nahrávání může spustit
+          render();
+          $('#imp-go')?.click();
+        } catch (err) { toast(err.message, 'err'); btn.disabled = false; btn.textContent = 'Zkusit znovu'; clearInterval(beat); LS.set(LOCK, null); }
+      };
+      return;
+    }
+    const doneN = total - st.remaining;
+    box.innerHTML = `<b>${esc(pkg.source)}</b>
+      <p class="fine">${pkg.events.length} akcí a ${total} fotek. Fotky se nahrají jako obsah administrátora, akce se vytvoří v příslušných ročnících.</p>
+      <div class="imp-state"><b>${doneN}</b> z ${total} fotek už je v kronice · zbývá <b>${st.remaining}</b></div>
+      ${st.dups.length ? `<div class="imp-warn">⚠️ Našel jsem <b>${st.dups.length}</b> zdvojených akcí (<b>${st.dupPhotos.length}</b> fotek) – nejspíš z dvojitého importu. Před pokračováním je ukliď.
+        <button class="btn btn-danger btn-block" id="imp-dedupe" style="margin-top:10px">Uklidit duplicity</button></div>` : ''}
+      ${api.DEMO ? `<label class="check" style="margin-top:14px"><input type="checkbox" id="imp-clear" ${doneN ? '' : 'checked'}><span>Nejdřív smazat ukázková data (demo)</span></label>` : ''}
+      ${pkg.classmates?.length || pkg.quotes?.length ? `<p class="fine" style="margin-top:10px">👋 Navíc ${pkg.classmates?.length || 0} spolužáků a ${pkg.quotes?.length || 0} hlášek (přidají se jen ti, kteří v kronice ještě nejsou).</p>` : ''}
+      <button class="btn btn-ink btn-block" id="imp-go" style="margin-top:14px" ${st.dups.length ? 'disabled' : ''}>${st.remaining === 0 ? 'Fotky jsou nahrané – doplnit spolužáky a hlášky' : doneN ? `Pokračovat v importu (zbývá ${st.remaining} fotek)` : `Importovat ${total} fotek`}</button>
+      ${pkg.classmates?.length ? `<button class="btn btn-ghost btn-block" id="imp-people" style="margin-top:8px">Importovat jen spolužáky a hlášky</button>` : ''}
+      ${textsTodo() ? `<button class="btn btn-ghost btn-block" id="imp-texts" style="margin-top:8px">Doplnit texty (${textsTodo()})</button>` : `<p class="fine" style="margin-top:8px">✓ Texty ročníků a akcí jsou doplněné.</p>`}
+      <p class="fine" style="margin-top:8px">Import nech běžet jen v jednom okně. Když ho zavřeš, příště pokračuje tam, kde skončil.</p>
+      <div class="b-log" id="imp-log"></div>`;
+    mountButtons(st);
+  };
+
   // spolužáci + hlášky (bez duplicit podle jména / textu)
   const importPeople = async () => {
     let n = 0;
-    const names = new Set(S.db.classmates.map(c => c.name.trim().toLowerCase()));
+    const names = new Set(S.db.classmates.map(c => norm(c.name)));
     for (const c of pkg.classmates || []) {
-      if (names.has(c.name.trim().toLowerCase())) continue;
+      if (names.has(norm(c.name))) continue;
       await save('classmates', { id: uid('c'), name: c.name, nickname: c.nickname || '', bio: c.bio || '', quote: c.quote || '', photoId: '', photoUrl: '', order: c.order ?? '', hidden: false, left: !!c.left });
       n++;
     }
-    const texts = new Set(S.db.quotes.map(q => q.text.trim()));
+    const texts = new Set(S.db.quotes.map(q => norm(q.text)));
     for (const q of pkg.quotes || []) {
-      if (texts.has(q.text.trim())) continue;
+      if (texts.has(norm(q.text))) continue;
       await save('quotes', { id: uid('q'), text: q.text, author: q.author || '', grade: q.grade || 0, context: q.context || '', hidden: false });
       n++;
     }
     return n;
   };
-  $('#imp-people') && ($('#imp-people').onclick = async e => {
-    e.target.disabled = true;
-    try { const n = await importPeople(); toast(`Přidáno ${n} záznamů`); done(); }
-    catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
-  });
-  $('#imp-go').onclick = async () => {
-    const btn = $('#imp-go'), log = $('#imp-log');
-    btn.disabled = true;
-    if (api.DEMO && $('#imp-clear')?.checked) { api.clearDemo(); await load(); }
-    let i = 0, ok = 0;
-    // položka fotky může být "cesta" nebo { f, w, h }
-    const put = async (entry, meta) => {
-      const path = typeof entry === 'string' ? entry : entry.f;
-      i++;
-      btn.innerHTML = `<span class="spin"></span> ${api.DEMO ? 'Přidávám' : 'Nahrávám'} ${i} / ${total}`;
-      try {
-        if (api.DEMO) {
-          // demo: fotky by se do prohlížeče nevešly → jen odkaz na soubor v balíčku
-          await save('photos', { id: uid('p'), fileId: '', url: 'import/' + path, ...meta, people: '', order: i, hidden: false,
-            createdAt: new Date().toISOString(), w: entry.w || 0, h: entry.h || 0 });
-        } else {
-          const blob = await (await fetch('import/' + path)).blob();
-          await uploadPhoto(new File([blob], path.split('/').pop(), { type: blob.type || 'image/jpeg' }), meta);
-        }
-        ok++;
-      } catch (err) { log.insertAdjacentHTML('beforeend', `<div class="err">✗ ${esc(path)} – ${esc(err.message)}</div>`); }
-    };
-    try {
-      for (const e of pkg.events) {
-        const ev = await save('events', { id: uid('e'), grade: e.grade, title: e.title, date: e.date || '', order: e.order ?? '', place: e.place || '', text: e.text || '', createdAt: new Date().toISOString() });
-        for (const p of e.photos) await put(p, { grade: e.grade, eventId: ev.id, caption: '', author: pkg.author, source: 'admin',
-          ...(typeof p === 'object' && p.faces !== undefined ? { faces: p.faces, taken: p.taken || '' } : {}),
-          ...(typeof p === 'object' && p.quiz === 'yes' ? { quiz: 'yes' } : {}) });
-        log.insertAdjacentHTML('beforeend', `<div>✓ ${e.grade}. tř. – ${esc(e.title)}</div>`);
-      }
-      for (const l of pkg.loose) for (const p of l.photos) await put(p, { grade: l.grade || 0, caption: l.caption || '', author: pkg.author, source: 'admin' });
-      await importPeople();
-      LS.set('kronika-import-done', new Date().toISOString().slice(0, 10));
-      btn.textContent = `Hotovo – ${ok} z ${total} fotek`;
-      toast(`Importováno ${ok} fotek`);
-    } catch (err) { toast(err.message, 'err'); btn.disabled = false; btn.textContent = 'Zkusit znovu'; }
+
+  // texty z balíčku: úvody ročníků, texty/data/pořadí akcí, akce jen s textem
+  const textsTodo = () => {
+    let n = 0;
+    for (const g of pkg.grades || []) {
+      const cur = S.db.grades.find(x => String(x.id) === String(g.id));
+      if (!cur || norm(cur.intro) !== norm(g.intro)) n++;
+    }
+    for (const e of pkg.events) {
+      const ex = S.db.events.find(x => key(x.grade, x.title) === key(e.grade, e.title));
+      if (!ex) { if (!e.photos.length) n++; continue; }
+      if ((e.text && norm(ex.text) !== norm(e.text)) || (e.date && String(ex.date) !== String(e.date))) n++;
+    }
+    return n;
   };
+  const applyTexts = async () => {
+    let n = 0;
+    for (const g of pkg.grades || []) {
+      const cur = S.db.grades.find(x => String(x.id) === String(g.id));
+      if (!cur || norm(cur.intro) !== norm(g.intro)) { await save('grades', { id: String(g.id), intro: g.intro }); n++; }
+    }
+    for (const e of pkg.events) {
+      const ex = S.db.events.find(x => key(x.grade, x.title) === key(e.grade, e.title));
+      if (!ex) {
+        if (!e.photos.length) { await save('events', { id: uid('e'), grade: e.grade, title: e.title, date: e.date || '', order: e.order ?? '', place: e.place || '', text: e.text || '', createdAt: new Date().toISOString() }); n++; }
+        continue;
+      }
+      const patch = {};
+      if (e.text && norm(ex.text) !== norm(e.text)) patch.text = e.text;
+      if (e.date && String(ex.date) !== String(e.date)) patch.date = e.date;
+      if (Object.keys(patch).length) { await save('events', { id: ex.id, ...patch }); n++; }
+    }
+    return n;
+  };
+
+  const mountButtons = st => {
+    $('#imp-texts') && ($('#imp-texts').onclick = async e => {
+      const b = e.target; b.disabled = true; b.innerHTML = '<span class="spin"></span> Doplňuji texty…';
+      try { const n = await applyTexts(); toast(`Doplněno ${n} textů`); } catch (err) { toast(err.message, 'err'); }
+      render();
+    });
+    $('#imp-people') && ($('#imp-people').onclick = async e => {
+      e.target.disabled = true;
+      try { const n = await importPeople(); toast(`Přidáno ${n} záznamů`); render(); }
+      catch (err) { toast(err.message, 'err'); e.target.disabled = false; }
+    });
+
+    $('#imp-dedupe') && ($('#imp-dedupe').onclick = async e => {
+      if (!confirm(`Smazat ${st.dups.length} zdvojených akcí a ${st.dupPhotos.length} fotek? Soubory půjdou do koše na Google Disku (30 dní jde obnovit). Původní akce a fotky zůstanou.`)) return;
+      const btn = e.target; btn.disabled = true;
+      let k = 0;
+      try {
+        for (const p of st.dupPhotos) { k++; btn.innerHTML = `<span class="spin"></span> Mažu ${k} / ${st.dupPhotos.length}`; await remove('photos', p.id); }
+        for (const d of st.dups) await remove('events', d.id);
+        toast('Duplicity uklizené ✓');
+      } catch (err) { toast(err.message, 'err'); }
+      try { await load(); } catch {}
+      render();
+    });
+
+    $('#imp-go').onclick = async () => {
+      if (lockedByOther()) return toast('Import už běží v jiné kartě tohoto prohlížeče.', 'err');
+      const btn = $('#imp-go'), log = $('#imp-log');
+      btn.disabled = true;
+      const beat = setInterval(() => LS.set(LOCK, String(Date.now())), 5000);
+      LS.set(LOCK, String(Date.now()));
+      try {
+        if (sheetVer() !== pkgVer) await markVer();
+        if (api.DEMO && $('#imp-clear')?.checked) { api.clearDemo(); await load(); }
+        const plan = analyze().plan;
+        const todoTotal = plan.reduce((a, x) => a + x.todo.length, 0);
+        let i = 0, ok = 0;
+        // položka fotky může být "cesta" nebo { f, w, h, faces, taken, quiz }
+        const put = async (entry, meta) => {
+          const path = typeof entry === 'string' ? entry : entry.f;
+          i++;
+          btn.innerHTML = `<span class="spin"></span> ${api.DEMO ? 'Přidávám' : 'Nahrávám'} ${i} / ${todoTotal}`;
+          try {
+            if (api.DEMO) {
+              await save('photos', { id: uid('p'), fileId: '', url: 'import/' + path, ...meta, people: '', order: i, hidden: false,
+                createdAt: new Date().toISOString(), w: entry.w || 0, h: entry.h || 0 });
+            } else {
+              const blob = await (await fetch('import/' + path)).blob();
+              await uploadPhoto(new File([blob], path.split('/').pop(), { type: blob.type || 'image/jpeg' }), meta);
+            }
+            ok++;
+          } catch (err) { log.insertAdjacentHTML('beforeend', `<div class="err">✗ ${esc(path)} – ${esc(err.message)}</div>`); }
+        };
+        for (const x of plan) {
+          if (x.loose) {
+            for (const p of x.todo) await put(p, { grade: x.loose.grade || 0, caption: x.loose.caption || '', author: pkg.author, source: 'admin' });
+            continue;
+          }
+          const e = x.e;
+          let ev = x.ex;
+          if (!ev) ev = await save('events', { id: uid('e'), grade: e.grade, title: e.title, date: e.date || '', order: e.order ?? '', place: e.place || '', text: e.text || '', createdAt: new Date().toISOString() });
+          for (const p of x.todo) await put(p, { grade: e.grade, eventId: ev.id, caption: '', author: pkg.author, source: 'admin',
+            ...(typeof p === 'object' && p.faces !== undefined ? { faces: p.faces, taken: p.taken || '' } : {}),
+            ...(typeof p === 'object' && p.quiz === 'yes' ? { quiz: 'yes' } : {}) });
+          if (x.todo.length) log.insertAdjacentHTML('beforeend', `<div>✓ ${e.grade}. tř. – ${esc(e.title)}</div>`);
+        }
+        await importPeople();
+        await applyTexts();
+        await markVer();
+        toast(`Importováno ${ok} fotek`);
+        // načíst čerstvý stav z tabulky a ukázat, co případně ještě zbývá (log chyb zůstane)
+        const logHTML = log.innerHTML;
+        try { await load(); } catch {}
+        render();
+        const nb = $('#imp-go'), nl = $('#imp-log');
+        if (nl) nl.innerHTML = logHTML;
+        if (nb && !analyze().plan.some(x => x.todo.length)) { nb.disabled = true; nb.textContent = `Hotovo – nahráno ${ok} fotek`; }
+      } catch (err) { toast(err.message, 'err'); btn.disabled = false; btn.textContent = 'Zkusit znovu'; }
+      finally { clearInterval(beat); LS.set(LOCK, null); }
+    };
+  };
+
+  render();
 }
 
 function eventsPanel() {
@@ -291,11 +457,60 @@ function mountQuiz() {
     const on = !inQuiz(p);
     b.classList.toggle('picked', on);           // hned ukázat, uložit na pozadí
     try {
-      await save('photos', { id: p.id, quiz: on ? 'yes' : '' });
+      await save('photos', { id: p.id, quiz: withFlag(p, 'yes', on) });
       const n = S.db.photos.filter(inQuiz).length;
       $('.quiz-count') && ($('.quiz-count').innerHTML = `<b>${n}</b> fotek ve hře${n < 3 ? ' · hra potřebuje aspoň 3' : ''}`);
       const t = $('[data-atab="quiz"] i'); t && (t.textContent = n);
     } catch (e) { b.classList.toggle('picked', !on); toast(e.message, 'err'); }
+  });
+}
+
+// ---------- výběr fotek k promítání ----------
+function showPanel() {
+  const all = albumPhotos().filter(p => photoGrade(p) >= 1 && photoGrade(p) <= 9);
+  const total = all.filter(inShow).length;
+  const perGrade = n => all.filter(p => photoGrade(p) === n && inShow(p)).length;
+  const groups = [];
+  for (const e of eventsOf(showGrade)) {
+    const ps = photosOfEvent(e.id);
+    if (ps.length) groups.push({ title: e.title, ps });
+  }
+  const loose = all.filter(p => photoGrade(p) === showGrade && !eventById(p.eventId));
+  if (loose.length) groups.push({ title: 'Fotky bez akce', ps: loose });
+  const tile = p => `<button class="adm-ph ${inShow(p) ? 'picked' : ''}" data-sp="${esc(p.id)}" style="${gStyle(photoGrade(p))}">${thumb(p)}<span class="qp-check">✓</span></button>`;
+  return `<p class="fine">Klepnutím vyber fotky, které se budou promítat. Když nevybereš žádnou, promítání si fotky vybere samo. Promítají se v pořadí tříd a akcí.</p>
+    <div class="quiz-count"><b>${total}</b> fotek k promítání</div>
+    <div class="chips-scroll small">${gradeList().map(g => `<button class="fchip ${showGrade === g.n ? 'on' : ''}" data-sg="${g.n}" style="${gStyle(g.n)}">${g.n}. třída${perGrade(g.n) ? ` <i>${perGrade(g.n)}</i>` : ''}</button>`).join('')}</div>
+    ${groups.map((g, gi) => `<div class="show-group">
+      <div class="show-group-h"><b>${esc(g.title)}</b><small>${g.ps.filter(inShow).length} / ${g.ps.length}</small>
+      <button class="link" data-sall="${gi}">${g.ps.every(inShow) ? 'Zrušit vše' : 'Vybrat vše'}</button></div>
+      <div class="adm-grid quiz-grid">${g.ps.slice(0, 120).map(tile).join('')}</div>
+      ${g.ps.length > 120 ? `<p class="fine">Zobrazeno prvních 120 z ${g.ps.length} fotek.</p>` : ''}
+    </div>`).join('') || '<p class="fine">V této třídě zatím nejsou fotky.</p>'}`;
+}
+function mountShow() {
+  $$('[data-sg]').forEach(b => b.onclick = () => { showGrade = Number(b.dataset.sg); done(); });
+  const setOne = async (p, on, b) => {
+    b && b.classList.toggle('picked', on);
+    await save('photos', { id: p.id, quiz: withFlag(p, 'show', on) });
+  };
+  const refreshCount = () => {
+    const n = S.db.photos.filter(inShow).length;
+    $('.quiz-count') && ($('.quiz-count').innerHTML = `<b>${n}</b> fotek k promítání`);
+    const t = $('[data-atab="show"] i'); t && (t.textContent = n);
+  };
+  $$('[data-sp]').forEach(b => b.onclick = async () => {
+    const p = photoById(b.dataset.sp);
+    const on = !inShow(p);
+    try { await setOne(p, on, b); refreshCount(); } catch (e) { b.classList.toggle('picked', !on); toast(e.message, 'err'); }
+  });
+  $$('[data-sall]').forEach(btn => btn.onclick = async () => {
+    const grid = btn.closest('.show-group').querySelector('.quiz-grid');
+    const tiles = $$('[data-sp]', grid);
+    const on = !tiles.every(t => t.classList.contains('picked'));
+    btn.disabled = true;
+    for (const t of tiles) { const p = photoById(t.dataset.sp); if (inShow(p) !== on) { try { await setOne(p, on, t); } catch (e) { toast(e.message, 'err'); break; } } }
+    done();
   });
 }
 
@@ -373,7 +588,7 @@ export function editPhoto(id) {
   if (!p) return;
   openForm({
     title: 'Upravit fotku',
-    values: p,
+    values: { ...p, quiz: hasFlag(p, 'yes') ? 'yes' : '', show: hasFlag(p, 'show') },
     intro: `<div class="form-prev">${thumb(p, 700)}<p class="fine">${p.source === 'classmate' ? `👥 Přidal/a spolužák: <b>${esc(p.author || '?')}</b>` : '⭐ Obsah administrátora'} · ${esc(fmtDate(p.createdAt))}</p></div>`,
     fields: [
       { k: 'grade', label: 'Ročník', type: 'select', options: gradeOpts() },
@@ -383,11 +598,14 @@ export function editPhoto(id) {
       { k: 'people', label: 'Kdo je na fotce', type: 'people', options: peopleOpts(), opt: true, help: 'Fotky s jedním označeným člověkem se použijí ve hře „Kdo je na fotce?“.' },
       { k: 'order', label: 'Pořadí v události', type: 'number', opt: true, help: 'Nižší číslo = dřív. První fotka je velká.' },
       { k: 'quiz', label: 'Ve hře „Poznej rok“', type: 'select', options: [{ v: '', l: 'Ne' }, { v: 'yes', l: 'Ano, použít ve hře' }], help: quizCheck(p).ok ? '⭐ Návrh: jsou na ní lidé a datum sedí do školního roku.' : `Automatický návrh: ne (${quizCheck(p).why}).` },
+      { k: 'show', label: 'Promítání', type: 'check', text: 'Promítat tuto fotku' },
       { k: 'hidden', label: 'Skrýt', type: 'check', text: 'Skrýt fotku (ostatní ji neuvidí)' },
     ],
     onSubmit: async v => {
       const ev = eventById(v.eventId);
-      await save('photos', { ...v, id: p.id, grade: ev ? ev.grade : Number(v.grade) });
+      const { show, ...rest } = v;
+      rest.quiz = withFlag({ quiz: withFlag(p, 'yes', v.quiz === 'yes') }, 'show', show);
+      await save('photos', { ...rest, id: p.id, grade: ev ? ev.grade : Number(v.grade) });
       done();
     },
     onDelete: async () => { await remove('photos', p.id); done(); },

@@ -79,9 +79,16 @@ export function schoolYear(n) {
   const y0 = Number(CONFIG.FIRST_SCHOOL_YEAR) || 2017;
   return [`${y0 + n - 1}-09-01`, `${y0 + n}-08-31`];
 }
-// Hra „Poznej rok“ bere jen fotky, které administrátor ručně vybral (quiz = 'yes').
+// Ruční výběry administrátora se ukládají jako značky do sloupce „quiz“ (oddělené čárkou):
+//   yes  = fotka je ve hře „Poznej rok“
+//   show = fotka se promítá
+export const flags = p => String(p?.quiz || '').split(',').map(s => s.trim()).filter(Boolean);
+export const hasFlag = (p, f) => flags(p).includes(f);
+export const withFlag = (p, f, on) => { const s = new Set(flags(p)); on ? s.add(f) : s.delete(f); return [...s].join(','); };
+
 export const photoGrade = p => eventById(p.eventId)?.grade ?? p.grade;
-export const inQuiz = p => p.quiz === 'yes' && p.source !== 'profile' && photoGrade(p) >= 1 && photoGrade(p) <= 9;
+export const inQuiz = p => hasFlag(p, 'yes') && p.source !== 'profile' && photoGrade(p) >= 1 && photoGrade(p) <= 9;
+export const inShow = p => hasFlag(p, 'show') && !p.hidden && p.source !== 'profile';
 
 // Jen NÁVRH pro výběr: na fotce jsou lidé a datum sedí do školního roku.
 export function quizCheck(p) {
@@ -102,7 +109,8 @@ export function coverOf(n) {
   return photoById(g.coverPhotoId) || photosOfGrade(n).sort(cmpPh)[0] || null;
 }
 
-const driveUrl = (id, w) => `https://lh3.googleusercontent.com/d/${id}=w${w}`;
+// Google Disk vrátí chybu (po ~25 s), když chceme fotku širší než originál → max. 1600 px (tolik má import)
+const driveUrl = (id, w) => `https://lh3.googleusercontent.com/d/${id}=w${Math.min(Number(w) || 1200, 1600)}`;
 export function imgSrc(p, w = 1200) {
   if (!p) return '';
   if (p.url) return p.url;
@@ -147,7 +155,12 @@ export async function remove(t, id) {
   api.writeCache(S.db);
 }
 export async function setProfilePhoto(file, id) { const r = await api.setProfilePhoto(file, id, S.key); apply('classmates', r); return r; }
-export async function uploadPhoto(file, meta) { const r = await api.upload(file, meta, S.key); apply('photos', r); return r; }
+export async function uploadPhoto(file, meta) {
+  const r = await api.upload(file, meta, S.key);
+  // server občas fotku uloží, ale odpověď nevrátí řádek – stav se pak dorovná přes load()
+  if (r && r.id) apply('photos', r);
+  return r;
+}
 export async function addScore(row) { const r = await api.addScore(row); apply('scores', r || row); }
 
 export function setPlayer(name) { S.player = name.trim().slice(0, 30); LS.set('kronika-player', S.player); }

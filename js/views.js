@@ -89,6 +89,7 @@ export function homeView() {
       <div class="hero-cta">
         <a class="btn btn-ink" href="#/rocnik/1">Otevřít kroniku ${ICON.right}</a>
         <a class="btn btn-yellow" href="#/pridat">${ICON.plus} Přidat fotku</a>
+        <a class="btn btn-ghost" href="#/promitani">📽️ Promítání</a>
       </div>
       <div class="collage">
         ${heroPics.map((p, i) => ph(p, { cls: `c${i + 1} tape`, r: [-1.5, -3, 3][i], w: i ? 700 : 1400, cap: false })).join('')}
@@ -321,7 +322,7 @@ export function albumView(q = {}) {
     <section class="page-head">
       <span class="pill">🖼️ Fotoalbum</span>
       <h1>Všechny naše ${scribble('fotky', 'var(--yellow)')}.</h1>
-      <p>${albumPhotos().length} fotek od administrátora i od spolužáků. Klepni na fotku pro zvětšení.</p>
+      <p>Klepni na fotku pro zvětšení.</p>
     </section>
     <div class="chips-scroll">${chips.map(([v, l]) => `<a class="fchip ${f === v ? 'on' : ''}" href="#/album?f=${v}" style="${/^[1-9]$/.test(v) ? gStyle(+v) : ''}">${esc(l)}</a>`).join('')}</div>
     ${list.length ? `<div class="masonry album">${list.slice(0, Number(q.n) || 60).map((p, i) => {
