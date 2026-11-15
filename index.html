@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Naše kronika</title>
+  <meta name="description" content="Digitální kronika naší třídy od 1. do 9. třídy.">
+  <meta name="theme-color" content="#F3F7FB">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Kronika">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800;900&family=Inter:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <div class="topbar-in">
+      <a href="#/" class="logo" aria-label="Úvod">
+        <span class="logo-mark" id="app-class">9.A</span>
+        <span class="logo-txt" id="app-name">Naše kronika</span>
+      </a>
+      <div class="topbar-r">
+        <span id="ctx"></span>
+        <a href="#/admin" class="adm-badge" id="adm-badge" hidden>ADMIN</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <nav class="tabbar" aria-label="Hlavní navigace"><div class="tabbar-in"></div></nav>
+  <div id="sheet-root"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
