@@ -1,6 +1,6 @@
 // Service worker: aplikace funguje i offline a dá se „nainstalovat“.
 // Při každé větší změně aplikace zvyš číslo verze.
-const VERSION = 'kronika-v15';
+const VERSION = 'kronika-v17';
 const SHELL = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'img/tricko.webp', 'img/logo.svg',
   'js/app.js', 'js/api.js', 'js/store.js', 'js/ui.js', 'js/views.js', 'js/games.js', 'js/admin.js', 'js/config.js', 'js/demo-data.js', 'js/present.js',
@@ -8,7 +8,7 @@ const SHELL = [
 const IMG_CACHE = 'kronika-img-v1';
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== IMG_CACHE && k !== 'kronika-proxy-v1').map(k => caches.delete(k)))).then(() => self.clients.claim()));
@@ -36,7 +36,7 @@ self.addEventListener('fetch', e => {
 
   // Vlastní soubory aplikace: síť (kvůli aktualizacím), offline z cache
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then(r => r || caches.match('index.html'))));

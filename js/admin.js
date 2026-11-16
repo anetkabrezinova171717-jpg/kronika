@@ -595,7 +595,7 @@ export function editPhoto(id) {
       { k: 'eventId', label: 'Událost', type: 'select', options: eventOpts(), help: 'Když vybereš událost, fotka se přesune do jejího ročníku.' },
       { k: 'caption', label: 'Popisek', opt: true },
       { k: 'author', label: 'Autor / kdo přidal', opt: true },
-      { k: 'people', label: 'Kdo je na fotce', type: 'people', options: peopleOpts(), opt: true, help: 'Fotky s jedním označeným člověkem se použijí ve hře „Kdo je na fotce?“.' },
+      { k: 'people', label: 'Kdo je na fotce', type: 'people', options: peopleOpts(), opt: true, help: 'Fotky s 1–6 označenými lidmi se použijí ve hře „Kdo je na fotce?“.' },
       { k: 'order', label: 'Pořadí v události', type: 'number', opt: true, help: 'Nižší číslo = dřív. První fotka je velká.' },
       { k: 'quiz', label: 'Ve hře „Poznej rok“', type: 'select', options: [{ v: '', l: 'Ne' }, { v: 'yes', l: 'Ano, použít ve hře' }], help: quizCheck(p).ok ? '⭐ Návrh: jsou na ní lidé a datum sedí do školního roku.' : `Automatický návrh: ne (${quizCheck(p).why}).` },
       { k: 'show', label: 'Promítání', type: 'check', text: 'Promítat tuto fotku' },

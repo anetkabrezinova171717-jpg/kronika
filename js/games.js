@@ -40,12 +40,17 @@ function build(id) {
   if (id === 'fotka') {
     const items = [];
     for (const p of vis(S.db.photos).filter(p => p.source !== 'profile')) {
-      const who = ids(p.people);
-      if (who.length === 1 && person(who[0])) items.push({ p, c: person(who[0]) });
+      const who = ids(p.people).map(person).filter(Boolean);
+      if (who.length && who.length <= 6 && cm.length - who.length >= 3) items.push({ p, who });
     }
-    cm.filter(c => cmPhoto(c)).forEach(c => items.push({ p: { url: c.photoUrl, fileId: c.photoId }, c }));
+    cm.filter(c => cmPhoto(c)).forEach(c => items.push({ p: { url: c.photoUrl, fileId: c.photoId }, who: [c] }));
     if (!items.length || cm.length < 4) return null;
-    return sample(items, ROUNDS).map(({ p, c }) => ({ prompt: 'Kdo je na fotce?', media: imgBox(p), options: opts(c, name) }));
+    // U fotky s více lidmi: jeden z nich je správně, ostatní možnosti jsou lidé, kteří na fotce nejsou
+    return sample(items, ROUNDS).map(({ p, who }) => {
+      const c = sample(who, 1)[0], on = new Set(who.map(x => x.id));
+      const options = shuffle([c, ...sample(cm.filter(x => !on.has(x.id)), 3)]).map(x => ({ label: name(x), ok: x.id === c.id }));
+      return { prompt: who.length > 1 ? 'Kdo z nich je na fotce?' : 'Kdo je na fotce?', media: imgBox(p), options };
+    });
   }
   if (id === 'hlaska') {
     // Doplň hlášku: v hlášce chybí jedno slovo, vybírá se ze 4 možností (ostatní slova z jiných hlášek)
