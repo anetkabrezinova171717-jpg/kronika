@@ -8,7 +8,8 @@ export const CONFIG = {
 
   APP_NAME: 'Flákači 2016',
   CLASS_NAME: 'Flákači',          // přezdívka třídy
-  CLASS_YEAR: '2016',             // rok z trička
+  CLASS_YEAR: '2016',
+  CLASS_LETTER: 'A',              // velká čísla ročníků se píšou jako 1.A, 2.A … 9.A             // rok z trička
   MOTTO: 'Učitelé, nejásejte, přijdou naše děti…',
   TEE_IMAGE: 'img/tricko.webp',   // obrázek našeho trička (prázdné = kreslené tričko)
 

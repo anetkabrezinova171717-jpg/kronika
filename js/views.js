@@ -73,7 +73,7 @@ export function homeView() {
     const cov = coverOf(g.n);
     const count = photosOfGrade(g.n).length;
     return `<a class="gcard reveal" href="#/rocnik/${g.n}" style="${gStyle(g.n)}">
-      <span class="gcard-num">${pad2(g.n)}</span>
+      <span class="gcard-num">${g.n}.${esc(CONFIG.CLASS_LETTER || '')}</span>
       <span class="gcard-txt"><b>${esc(g.title)}</b><small>${esc(g.years)} · ${count} ${count === 1 ? 'fotka' : count < 5 && count ? 'fotky' : 'fotek'}</small></span>
       ${cov ? `<span class="gcard-pic"><img loading="lazy" src="${esc(imgSrc(cov, 300))}" data-fid="${esc(cov.fileId || '')}" alt="" onerror="__imgErr(this)"></span>` : `<span class="gcard-pic empty">${ICON.right}</span>`}
     </a>`;
@@ -216,7 +216,7 @@ export function gradeView(n, q = {}) {
     <div class="g-page" style="${gStyle(n)}">
     <nav class="steps" aria-label="Ročníky"><div class="steps-in">${steps}</div></nav>
     <section class="g-hero">
-      ${n === 9 ? `<div class="g-tee">${teeHTML('mini')}</div>` : `<span class="g-num" aria-hidden="true">${pad2(n)}</span>`}
+      ${n === 9 ? `<div class="g-tee">${teeHTML('mini')}</div>` : `<span class="g-num" aria-hidden="true">${n}.${esc(CONFIG.CLASS_LETTER || '')}</span>`}
       <span class="g-kicker">Ročník ${n} z 9</span>
       <h1>${esc(g.title)}</h1>
       <p class="g-years">${esc(g.years)}${g.subtitle ? ` · ${esc(g.subtitle)}` : ''}</p>

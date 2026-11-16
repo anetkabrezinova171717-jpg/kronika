@@ -1,6 +1,6 @@
 // Service worker: aplikace funguje i offline a dá se „nainstalovat“.
 // Při každé větší změně aplikace zvyš číslo verze.
-const VERSION = 'kronika-v14';
+const VERSION = 'kronika-v15';
 const SHELL = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'img/tricko.webp', 'img/logo.svg',
   'js/app.js', 'js/api.js', 'js/store.js', 'js/ui.js', 'js/views.js', 'js/games.js', 'js/admin.js', 'js/config.js', 'js/demo-data.js', 'js/present.js',

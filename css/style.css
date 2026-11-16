@@ -227,7 +227,7 @@ em { font-style: normal; color: var(--ink-3); font-weight: 600; }
 .gcard:nth-child(odd) { transform: rotate(-.5deg); }
 .gcard.reveal:not(.in) { transform: translateY(22px); }
 .gcard:active { transform: scale(.98); }
-.gcard-num { font-family: var(--display); font-weight: 800; font-size: 46px; line-height: .9; letter-spacing: -.04em; }
+.gcard-num { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: .9; letter-spacing: -.04em; }
 .gcard-txt b { display: block; font-family: var(--display); font-size: 22px; letter-spacing: -.02em; }
 .gcard-txt small { font-weight: 700; font-size: 13px; opacity: .8; }
 .gcard-pic { width: 64px; height: 64px; border-radius: 14px; overflow: hidden; border: 3px solid #fff; transform: rotate(5deg); box-shadow: var(--shadow-sm); background: rgba(255, 255, 255, .25); }
@@ -274,7 +274,7 @@ em { font-style: normal; color: var(--ink-3); font-weight: 600; }
 .step.on b { font-weight: 900; margin-right: 3px; }
 
 .g-hero { position: relative; background: var(--g); color: var(--gi); padding: 28px 20px 30px; border-radius: 0 0 36px 36px; overflow: hidden; }
-.g-num { position: absolute; right: -14px; top: -14px; font-family: var(--display); font-weight: 800; font-size: 190px; line-height: .85; letter-spacing: -.06em; color: transparent; -webkit-text-stroke: 2.5px var(--gi); opacity: .4; pointer-events: none; animation: numIn .8s var(--ease); }
+.g-num { position: absolute; right: -14px; top: -14px; font-family: var(--display); font-weight: 800; font-size: 150px; line-height: .85; letter-spacing: -.05em; color: transparent; -webkit-text-stroke: 2.5px var(--gi); opacity: .4; pointer-events: none; animation: numIn .8s var(--ease); }
 @keyframes numIn { from { transform: translateX(40px); opacity: 0; } }
 .g-kicker { display: inline-block; font-weight: 800; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; padding: 5px 12px; border-radius: 999px; background: color-mix(in srgb, var(--gi) 16%, transparent); }
 .g-hero h1 { font-size: 58px; margin: 14px 0 6px; position: relative; }
@@ -622,7 +622,7 @@ input[type=file] { padding: 10px; font-size: 14px; }
 
 /* ročník */
 .sl-grade { background: var(--g); color: var(--gi); justify-content: flex-start; padding: 0 9vw; }
-.sl-bignum { position: absolute; right: -2vw; bottom: -8vh; font-family: var(--display); font-weight: 900; font-size: 58vh; line-height: .8; letter-spacing: -.06em; color: transparent; -webkit-text-stroke: 3px var(--gi); opacity: .35; }
+.sl-bignum { position: absolute; right: -2vw; bottom: -8vh; font-family: var(--display); font-weight: 900; font-size: 46vh; line-height: .8; letter-spacing: -.05em; color: transparent; -webkit-text-stroke: 3px var(--gi); opacity: .35; }
 .in .sl-bignum { animation: prNum 1.4s var(--ease) both; }
 @keyframes prNum { from { opacity: 0; transform: translateX(12vw); } }
 .sl-grade h1 { font-size: clamp(56px, 11vw, 190px); }
@@ -676,7 +676,7 @@ input[type=file] { padding: 10px; font-size: 14px; }
   .sl-tee img { max-width: 64vw; max-height: 40vh; }
   .sl-polaroid img { max-height: 42vh; }
   .sl-grade .sl-intro-line { max-width: 80vw; }
-  .sl-bignum { font-size: 34vh; }
+  .sl-bignum { font-size: 26vh; }
 }
 
 @media (min-width: 640px) {

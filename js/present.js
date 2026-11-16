@@ -119,7 +119,7 @@ function slideHTML(s) {
     case 'grade': {
       const g = G[s.g - 1];
       return `<div class="sl sl-grade" style="${colorVars(s.g)}">
-        <span class="sl-bignum">${pad2(s.g)}</span>
+        <span class="sl-bignum">${s.g}.${esc(CONFIG.CLASS_LETTER || '')}</span>
         <div class="sl-grade-txt"><h1>${esc(g.title)}</h1><p>${esc(g.years)}</p>
         ${g.intro ? `<p class="sl-intro-line">${esc(g.intro)}</p>` : ''}</div></div>`;
     }
