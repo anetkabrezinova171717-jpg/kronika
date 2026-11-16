@@ -7,11 +7,39 @@ import { gamesView, gameView } from './games.js';
 import { adminView, handleAct } from './admin.js';
 import { presentView } from './present.js';
 
-// Záložní URL, když se fotka z Disku nenačte
+// Když se fotka z Disku nenačte: Google při hodně fotkách z jednoho připojení
+// (např. všichni na jedné wifi) vrací chybu 429. Pak fotku stáhne náš Apps Script
+// a pošle ji jako data:URL (max. 3 naráz). Když ani to nevyjde, zkouší se znovu s odstupem.
+const proxyQ = []; let proxyRun = 0; let proxyOff = false;
+const proxyNext = () => {
+  while (proxyRun < 3 && proxyQ.length) {
+    const [img, f, w] = proxyQ.shift();
+    if (!img.isConnected) continue;
+    proxyRun++;
+    fetch(`${CONFIG.API_URL}?action=img&id=${encodeURIComponent(f)}&w=${w}`)
+      .then(r => r.json())
+      .then(j => {
+        if (j.ok && j.data) img.src = j.data;
+        else { if (/Neznámá akce/.test(j.error || '')) proxyOff = true; retryLater(img); }
+      })
+      .catch(() => retryLater(img))
+      .finally(() => { proxyRun--; proxyNext(); });
+  }
+};
+const retryLater = img => {
+  const f = img.dataset.fid, n = Number(img.dataset.fb || 0), w = img.dataset.w;
+  if (n >= 7 || !img.isConnected) { img.classList.add('broken'); return; }
+  img.dataset.fb = String(n + 1);
+  const delay = [0, 0, 3000, 8000, 15000, 30000, 60000][n] + Math.random() * 3000;
+  setTimeout(() => { if (img.isConnected) img.src = `https://lh3.googleusercontent.com/d/${f}=w${w}?r=${n}`; }, delay);
+};
 window.__imgErr = img => {
   const f = img.dataset.fid;
-  if (f && !img.dataset.fb) { img.dataset.fb = '1'; img.src = `https://drive.google.com/thumbnail?id=${f}&sz=w1600`; }
-  else img.classList.add('broken');
+  if (!f || !img.isConnected || String(img.src).startsWith('data:')) { img.classList.add('broken'); return; }
+  img.dataset.w ||= (String(img.src).match(/[=&]s?z?=?w(\d+)/) || [])[1] || '800';
+  const n = Number(img.dataset.fb || 0);
+  if (n === 0 && CONFIG.API_URL && !proxyOff) { img.dataset.fb = '2'; proxyQ.push([img, f, img.dataset.w]); proxyNext(); }
+  else retryLater(img);
 };
 
 const routes = [
