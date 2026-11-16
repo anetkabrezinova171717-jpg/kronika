@@ -8,21 +8,44 @@ import { adminView, handleAct } from './admin.js';
 import { presentView } from './present.js';
 
 // Když se fotka z Disku nenačte: Google při hodně fotkách z jednoho připojení
-// (např. všichni na jedné wifi) vrací chybu 429. Pak fotku stáhne náš Apps Script
-// a pošle ji jako data:URL (max. 3 naráz). Když ani to nevyjde, zkouší se znovu s odstupem.
-const proxyQ = []; let proxyRun = 0; let proxyOff = false;
+// (např. všichni na jedné wifi) vrací chybu 429. Pak fotky stáhne náš Apps Script
+// po skupinách (8 fotek na dotaz, 4 dotazy naráz) a prohlížeč si je uloží, takže příště jsou hned.
+const PROXY_CACHE = 'kronika-proxy-v1';
+const pKey = (f, w) => `https://kronika.local/img/${f}/${w}`;
+const proxyQ = []; let proxyRun = 0, proxyTimer = 0, batchOff = false, proxyOff = false;
+const cacheGet = async (f, w) => { try { const r = await (await caches.open(PROXY_CACHE)).match(pKey(f, w)); return r ? await r.text() : null; } catch { return null; } };
+const cachePut = async (f, w, d) => { try { await (await caches.open(PROXY_CACHE)).put(pKey(f, w), new Response(d)); } catch {} };
+const proxyFetch = async (group, w) => {
+  const url = CONFIG.API_URL;
+  if (!batchOff) {
+    const j = await (await fetch(`${url}?action=imgs&w=${w}&ids=${group.map(x => encodeURIComponent(x[1])).join(',')}`)).json();
+    if (j.ok) return j.data || {};
+    if (!/Neznámá akce/.test(j.error || '')) throw new Error(j.error);
+    batchOff = true;   // starší verze skriptu – po jedné
+  }
+  const out = {};
+  for (const [, f] of group) {
+    const j = await (await fetch(`${url}?action=img&id=${encodeURIComponent(f)}&w=${w}`)).json();
+    if (j.ok && j.data) out[f] = j.data;
+    else if (/Neznámá akce/.test(j.error || '')) { proxyOff = true; break; }
+  }
+  return out;
+};
 const proxyNext = () => {
-  while (proxyRun < 3 && proxyQ.length) {
-    const [img, f, w] = proxyQ.shift();
-    if (!img.isConnected) continue;
+  clearTimeout(proxyTimer); proxyTimer = 0;
+  while (proxyRun < 4 && proxyQ.length) {
+    const w = proxyQ[0][2];
+    const group = [];
+    for (let k = 0; k < proxyQ.length && group.length < 8;) {
+      if (proxyQ[k][2] === w && proxyQ[k][0].isConnected) group.push(proxyQ.splice(k, 1)[0]);
+      else if (!proxyQ[k][0].isConnected) proxyQ.splice(k, 1);
+      else k++;
+    }
+    if (!group.length) continue;
     proxyRun++;
-    fetch(`${CONFIG.API_URL}?action=img&id=${encodeURIComponent(f)}&w=${w}`)
-      .then(r => r.json())
-      .then(j => {
-        if (j.ok && j.data) img.src = j.data;
-        else { if (/Neznámá akce/.test(j.error || '')) proxyOff = true; retryLater(img); }
-      })
-      .catch(() => retryLater(img))
+    proxyFetch(group, w)
+      .then(data => group.forEach(([img, f]) => { if (data[f]) { img.src = data[f]; cachePut(f, w, data[f]); } else retryLater(img); }))
+      .catch(() => group.forEach(([img]) => retryLater(img)))
       .finally(() => { proxyRun--; proxyNext(); });
   }
 };
@@ -33,14 +56,20 @@ const retryLater = img => {
   const delay = [0, 0, 3000, 8000, 15000, 30000, 60000][n] + Math.random() * 3000;
   setTimeout(() => { if (img.isConnected) img.src = `https://lh3.googleusercontent.com/d/${f}=w${w}?r=${n}`; }, delay);
 };
-window.__imgErr = img => {
+window.__imgErr = async img => {
   const f = img.dataset.fid;
   if (!f || !img.isConnected || String(img.src).startsWith('data:')) { img.classList.add('broken'); return; }
-  img.dataset.w ||= (String(img.src).match(/[=&]s?z?=?w(\d+)/) || [])[1] || '800';
+  const w = (img.dataset.w ||= (String(img.src).match(/[=&]s?z?=?w(\d+)/) || [])[1] || '800');
   const n = Number(img.dataset.fb || 0);
-  if (n === 0 && CONFIG.API_URL && !proxyOff) { img.dataset.fb = '2'; proxyQ.push([img, f, img.dataset.w]); proxyNext(); }
-  else retryLater(img);
+  if (n === 0 && CONFIG.API_URL && !proxyOff) {
+    img.dataset.fb = '2';
+    const hit = await cacheGet(f, w);
+    if (hit) { img.src = hit; return; }
+    proxyQ.push([img, f, w]);
+    if (!proxyTimer) proxyTimer = setTimeout(proxyNext, 120);   // chvilku počkat a poslat víc fotek najednou
+  } else retryLater(img);
 };
+
 
 const routes = [
   [/^\/$/, (m, q) => homeView(q)],
