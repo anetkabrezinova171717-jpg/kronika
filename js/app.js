@@ -56,6 +56,16 @@ const retryLater = img => {
   const delay = [0, 0, 3000, 8000, 15000, 30000, 60000][n] + Math.random() * 3000;
   setTimeout(() => { if (img.isConnected) img.src = `https://lh3.googleusercontent.com/d/${f}=w${w}?r=${n}`; }, delay);
 };
+// Pro promítání: stáhnout fotky přes skript (s uložením v prohlížeči). Vrací { fileId: dataURL }.
+window.__proxyImgs = async (fids, w) => {
+  const out = {}, need = [];
+  for (const f of fids) { const hit = await cacheGet(f, w); if (hit) out[f] = hit; else need.push(f); }
+  for (let k = 0; k < need.length && !proxyOff; k += 8) {
+    const group = need.slice(k, k + 8).map(f => [null, f, w]);
+    try { const d = await proxyFetch(group, w); for (const [f, v] of Object.entries(d)) { out[f] = v; cachePut(f, w, v); } } catch {}
+  }
+  return out;
+};
 window.__imgErr = async img => {
   const f = img.dataset.fid;
   if (!f || !img.isConnected || String(img.src).startsWith('data:')) { img.classList.add('broken'); return; }

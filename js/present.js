@@ -55,7 +55,57 @@ function classPhoto() {
 }
 
 const colorVars = n => { const c = COLORS[n] || COLORS[0]; return `--g:${c.bg};--gi:${c.ink}`; };
-const img = (p, w = 1800, cls = '') => p ? `<img class="${cls}" src="${esc(imgSrc(p, w))}" data-fid="${esc(p.fileId || '')}" alt="" onerror="__imgErr(this)">` : '';
+// Všechny fotky promítání v jedné velikosti (1280 px stačí na televizi i projektor) – stáhnou se dopředu a pak už jen naskočí.
+const PW = 1280;
+const ready = new Map();   // photo.id → src, který se opravdu načetl (Disk nebo data:URL ze skriptu)
+const srcOf = p => ready.get(p.id) || imgSrc(p, PW);
+const img = (p, w, cls = '') => p ? `<img class="${cls}" src="${esc(srcOf(p))}" data-fid="${esc(p.fileId || '')}" alt="" onerror="__imgErr(this)">` : '';
+
+// Přednačtení: přímo z Disku (6 naráz); co Google odmítne, hned stahuje skript po skupinách (3 skupiny naráz).
+let prep = null;
+function prepare(photos, onProgress) {
+  const list = [...new Map(photos.filter(Boolean).map(p => [p.id, p])).values()].filter(p => !ready.has(p.id));
+  const total = list.length;
+  let done = 0;
+  const tick = () => onProgress && onProgress(done, total);
+  const direct = p => new Promise(res => {
+    const im = new Image();
+    im.onload = () => { ready.set(p.id, im.src); res(true); };   // zůstane v mezipaměti prohlížeče
+    im.onerror = () => res(false);
+    im.src = imgSrc(p, PW);
+  });
+  const failQ = [];
+  let proxyBusy = 0, directLeft = list.length;
+  let finish; const allDone = new Promise(r => { finish = r; });
+  const check = () => { tick(); if (done >= total) finish(); };
+  const pump = () => {
+    while (proxyBusy < 3 && failQ.length && window.__proxyImgs) {
+      const part = failQ.splice(0, 6);
+      proxyBusy++;
+      window.__proxyImgs(part.map(p => p.fileId).filter(Boolean), PW)
+        .then(got => part.forEach(p => { if (got[p.fileId]) ready.set(p.id, got[p.fileId]); }))
+        .catch(() => {})
+        .finally(() => { proxyBusy--; done += part.length; check(); pump(); });
+    }
+    if (!window.__proxyImgs && failQ.length) { done += failQ.splice(0).length; check(); }
+  };
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const p = list[next++];
+      const ok = await direct(p);
+      directLeft--;
+      if (ok) { done++; check(); }
+      else { failQ.push(p); if (failQ.length >= 6 || directLeft === 0) pump(); }
+    }
+    pump();
+  };
+  tick();
+  if (!total) return Promise.resolve();
+  Array.from({ length: 6 }, worker);
+  return allDone;
+}
+const slidePhotos = slides => slides.flatMap(s => s.type === 'outro' ? [classPhoto()] : [s.p]).filter(p => p && (p.fileId || p.url));
 
 function slideHTML(s) {
   const G = gradeList();
@@ -114,11 +164,24 @@ export function presentView() {
            <small>Fotky se vyberou automaticky. Vlastní výběr uděláš v Admin → Promítání.</small></div>`}
       <div class="field"><label>Jak dlouho jedna fotka</label><div class="row wrap">${[4, 6, 9].map(n => chip('speed', n, `${n} s`)).join('')}</div></div>
       <p class="fine" id="pr-info"></p>
+      <div class="pr-prep"><div class="pr-prep-bar"><span id="pr-bar"></span></div><p class="fine" id="pr-prep">Připravuji fotky…</p></div>
       <button class="btn btn-ink btn-block" id="pr-go">▶ Spustit promítání</button>
       <p class="fine">Ovládání: šipky nebo klepnutí vlevo/vpravo, mezerník = pauza, F = celá obrazovka, Esc = konec.</p>
     </div>`,
     mount() {
-      const info = () => { const sl = buildSlides(); const ph = sl.filter(s => s.type === 'photo').length; const min = Math.round(sl.reduce((a, s) => a + durationOf(s), 0) / 60000); $('#pr-info').textContent = `${ph} fotek · asi ${min} min`; };
+      const progress = (d, t) => {
+        const bar = $('#pr-bar'), txt = $('#pr-prep');
+        if (!bar) return;
+        const all = d >= t;
+        bar.style.width = `${t ? Math.round((d / t) * 100) : 100}%`;
+        txt.textContent = all ? '✓ Všechny fotky jsou připravené – promítání poběží bez čekání.' : `Připravuji fotky ${d} / ${t}… Nech stránku otevřenou, ať pak promítání běží plynule.`;
+        bar.parentElement.classList.toggle('done', all);
+      };
+      const info = () => {
+        const sl = buildSlides(); const ph = sl.filter(s => s.type === 'photo').length; const min = Math.round(sl.reduce((a, s) => a + durationOf(s), 0) / 60000);
+        $('#pr-info').textContent = `${ph} fotek · asi ${min} min`;
+        prep = prepare(slidePhotos(sl), progress);
+      };
       info();
       $$('[data-o]').forEach(b => b.onclick = () => {
         opts[b.dataset.o] = Number(b.dataset.v); saveOpts();
@@ -151,7 +214,7 @@ function start() {
   try { root.requestFullscreen?.(); } catch {}
   try { navigator.wakeLock?.request('screen').then(w => { wake = w; }).catch(() => {}); } catch {}
 
-  const preload = n => { const s = slides[n]; if (s?.p) { const im = new Image(); im.src = imgSrc(s.p, 2000); } };
+  const preload = n => { const s = slides[n]; if (s?.p && !ready.has(s.p.id)) prepare([s.p]); };
   let token = 0;
   const show = async (n, dir = 1) => {
     i = Math.max(0, Math.min(slides.length - 1, n));
@@ -164,7 +227,7 @@ function start() {
     stage.appendChild(el);
     // počkat, až se načte hlavní fotka (max. 4 s), ať se neprolíná prázdný snímek
     const im = el.querySelector('.sl-pic img, .sl-polaroid img');
-    if (im && !im.complete) await Promise.race([new Promise(r => { im.addEventListener('load', r); im.addEventListener('error', r); }), new Promise(r => setTimeout(r, 4000))]);
+    if (im && !im.complete) await Promise.race([new Promise(r => { im.addEventListener('load', r); }), new Promise(r => setTimeout(r, 2500))]);
     if (my !== token) { el.remove(); return; }   // mezitím už uživatel přeskočil dál
     void el.offsetWidth;
     el.classList.add('in');
@@ -172,7 +235,7 @@ function start() {
     old.forEach(o => { o.classList.add('out'); setTimeout(() => o.remove(), 1200); });
     bars.forEach((b, k) => b.classList.toggle('done', k < i));
     bars.forEach((b, k) => b.classList.toggle('now', k === i));
-    preload(i + 1); preload(i + 2);
+    preload(i + 1); preload(i + 2); preload(i + 3);
     schedule();
   };
   const schedule = () => {
