@@ -13,7 +13,7 @@ export const CONFIG = {
   TEE_IMAGE: 'img/tricko.webp',   // obrázek našeho trička (prázdné = kreslené tričko)
 
   // Úvodní koláž: první fotka z akcí s tímhle textem v názvu (velká nahoře, vlevo dole, vpravo dole)
-  HERO_EVENTS: ['Třídní foto 9', 'vyřazení', 'Rozlučka'],
+  HERO_EVENTS: ['Třídní foto 9', 'Poslední zvonění', 'Rozlučka'],
   SCHOOL_NAME: 'ZŠ T. G. Masaryka Hodkovice',
   SCHOOL_SHORT: 'ZŠ TGM Hodkovice',
 

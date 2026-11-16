@@ -539,7 +539,9 @@ export function openLightbox(list, startId) {
     $('.lb-nav.l', lb).hidden = i === 0;
     $('.lb-nav.r', lb).hidden = i === list.length - 1;
   };
-  const go = d => { const j = i + d; if (j < 0 || j >= list.length) return; i = j; img.classList.remove('in'); show(); void img.offsetWidth; img.classList.add('in'); };
+  const stage = $('.lb-stage', lb);
+  img.onclick = () => { stage.classList.toggle('zoom'); stage.scrollTop = 0; };
+  const go = d => { const j = i + d; if (j < 0 || j >= list.length) return; i = j; stage.classList.remove('zoom'); img.classList.remove('in'); show(); void img.offsetWidth; img.classList.add('in'); };
   const close = () => { lb.classList.remove('open'); document.body.classList.remove('noscroll'); document.removeEventListener('keydown', key); setTimeout(() => lb.remove(), 250); };
   const key = e => { if (e.key === 'Escape') close(); if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1); };
   document.addEventListener('keydown', key);
@@ -550,7 +552,7 @@ export function openLightbox(list, startId) {
   let x0 = null, y0 = null;
   lb.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
   lb.addEventListener('touchend', e => {
-    if (x0 == null) return;
+    if (x0 == null || stage.classList.contains('zoom')) { x0 = null; return; }
     const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1);
     else if (dy > 90 && Math.abs(dy) > Math.abs(dx)) close();

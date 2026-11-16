@@ -5,7 +5,7 @@ import { $, esc, shuffle, sample, toast, openSheet, closeSheet, scribble, ICON }
 export const GAMES = [
   { id: 'prezdivky', title: 'Poznej podle přezdívky', short: 'Kdo je „Koblížek“?', bg: 'var(--yellow)', fg: 'var(--ink)', emoji: '🏷️' },
   { id: 'fotka', title: 'Kdo je na fotce?', short: 'Poznej spolužáka na fotografii', bg: 'var(--pink)', fg: '#fff', emoji: '📸' },
-  { id: 'hlaska', title: 'Kdo to řekl?', short: 'Skutečné hlášky z naší třídy', bg: 'var(--green)', fg: '#fff', emoji: '💬' },
+  { id: 'hlaska', title: 'Doplň hlášku', short: 'Které slovo v hlášce chybí?', bg: 'var(--green)', fg: '#fff', emoji: '💬' },
   { id: 'rok', title: 'Poznej rok', short: 'Ze které třídy je ta fotka?', bg: 'var(--blue)', fg: '#fff', emoji: '🗓️' },
 ];
 const ROUNDS = 10;
@@ -48,13 +48,30 @@ function build(id) {
     return sample(items, ROUNDS).map(({ p, c }) => ({ prompt: 'Kdo je na fotce?', media: imgBox(p), options: opts(c, name) }));
   }
   if (id === 'hlaska') {
-    const items = vis(S.db.quotes).filter(q => person(q.author)).map(q => ({ text: q.text, c: person(q.author), ctx: q.context }));
-    cm.filter(c => c.quote).forEach(c => { if (!items.some(i => i.text === c.quote)) items.push({ text: c.quote, c }); });
-    if (!items.length || cm.length < 4) return null;
-    return sample(items, ROUNDS).map(({ text, c, ctx }) => ({
-      prompt: 'Kdo to řekl?',
-      media: `<blockquote class="q-quote">„${esc(text)}“${ctx ? `<small>${esc(ctx)}</small>` : ''}</blockquote>`,
-      options: opts(c, name),
+    // Doplň hlášku: v hlášce chybí jedno slovo, vybírá se ze 4 možností (ostatní slova z jiných hlášek)
+    const texts = [...new Set([...vis(S.db.quotes).map(q => q.text), ...cm.map(c => c.quote)].map(t => String(t || '').trim()).filter(Boolean))];
+    const WORD = /[\p{L}]+/gu;
+    const words = t => [...t.matchAll(WORD)].map(m => ({ w: m[0], at: m.index }));
+    const lc = s => s.toLocaleLowerCase('cs');
+    const items = [];
+    for (const t of texts) {
+      const ws = words(t);
+      if (ws.length < 2) continue;
+      const cand = ws.filter(x => x.w.length >= 4);
+      if (!cand.length) continue;
+      const longest = Math.max(...cand.map(x => x.w.length));
+      const pick = sample(cand.filter(x => x.w.length >= Math.min(longest, 5) || x === ws[ws.length - 1]), 1)[0];
+      const pool = [...new Set(texts.filter(o => o !== t).flatMap(o => words(o).map(x => x.w)).filter(w => w.length >= 4 && lc(w) !== lc(pick.w)).map(lc))];
+      if (pool.length < 3) continue;
+      const near = pool.sort((x, y) => Math.abs(x.length - pick.w.length) - Math.abs(y.length - pick.w.length)).slice(0, 12);
+      const cap = w => (pick.w[0] === pick.w[0].toLocaleUpperCase('cs') ? w[0].toLocaleUpperCase('cs') + w.slice(1) : w);
+      items.push({ t, pick, decoys: sample(near, 3).map(cap) });
+    }
+    if (items.length < 3) return null;
+    return sample(items, ROUNDS).map(({ t, pick, decoys }) => ({
+      prompt: 'Doplň hlášku',
+      media: `<blockquote class="q-quote">„${esc(t.slice(0, pick.at))}<span class="q-gap">…</span>${esc(t.slice(pick.at + pick.w.length))}“</blockquote>`,
+      options: shuffle([{ label: pick.w, ok: true }, ...decoys.map(d => ({ label: d, ok: false }))]),
     }));
   }
   if (id === 'rok') {
@@ -145,7 +162,7 @@ function start(g) {
   }
   const qs = build(g.id);
   if (!qs || !qs.length) {
-    el.innerHTML = `<div class="q-card center"><b>Na tuhle hru zatím nemáme dost dat.</b><p class="fine">${g.id === 'fotka' ? 'Potřebujeme aspoň 4 spolužáky a fotky, na kterých je označený jeden člověk (nebo profilovky).' : g.id === 'hlaska' ? 'Potřebujeme hlášky se známým autorem. Administrátor doplní v Adminu → Hlášky, kdo co řekl (nebo „oblíbenou hlášku“ u spolužáka).' : g.id === 'rok' ? 'Fotky do této hry vybírá administrátor (Admin → Hra: Poznej rok). Zatím jich je vybráno méně než 3.' : 'Potřebujeme aspoň 4 spolužáky s přezdívkami.'}</p><a class="btn btn-ink" href="#/hry">Zpět na hry</a></div>`;
+    el.innerHTML = `<div class="q-card center"><b>Na tuhle hru zatím nemáme dost dat.</b><p class="fine">${g.id === 'fotka' ? 'Potřebujeme aspoň 4 spolužáky a fotky, na kterých je označený jeden člověk (nebo profilovky).' : g.id === 'hlaska' ? 'Potřebujeme aspoň 3 hlášky. Administrátor je doplní v Adminu → Hlášky.' : g.id === 'rok' ? 'Fotky do této hry vybírá administrátor (Admin → Hra: Poznej rok). Zatím jich je vybráno méně než 3.' : 'Potřebujeme aspoň 4 spolužáky s přezdívkami.'}</p><a class="btn btn-ink" href="#/hry">Zpět na hry</a></div>`;
     return;
   }
   let i = 0, score = 0;
