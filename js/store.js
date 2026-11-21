@@ -87,8 +87,8 @@ export const hasFlag = (p, f) => flags(p).includes(f);
 export const withFlag = (p, f, on) => { const s = new Set(flags(p)); on ? s.add(f) : s.delete(f); return [...s].join(','); };
 
 export const photoGrade = p => eventById(p.eventId)?.grade ?? p.grade;
-export const inQuiz = p => hasFlag(p, 'yes') && p.source !== 'profile' && photoGrade(p) >= 1 && photoGrade(p) <= 9;
-export const inShow = p => hasFlag(p, 'show') && !p.hidden && p.source !== 'profile';
+export const inQuiz = p => hasFlag(p, 'yes') && p.source !== 'profile' && !isVideo(p) && photoGrade(p) >= 1 && photoGrade(p) <= 9;
+export const inShow = p => hasFlag(p, 'show') && !p.hidden && p.source !== 'profile' && !isVideo(p);
 
 // Jen NÁVRH pro výběr: na fotce jsou lidé a datum sedí do školního roku.
 export function quizCheck(p) {
@@ -111,8 +111,21 @@ export function coverOf(n) {
 
 // Google Disk vrátí chybu (po ~25 s), když chceme fotku širší než originál → max. 1600 px (tolik má import)
 const driveUrl = (id, w) => `https://lh3.googleusercontent.com/d/${id}=w${Math.min(Number(w) || 1200, 1600)}`;
+// Video = řádek ve fotkách se source 'video' a odkazem (YouTube nebo Google Disk) v url
+export const isVideo = p => p?.source === 'video';
+export function videoOf(p) {
+  if (!isVideo(p)) return null;
+  const u = String(p.url || '').trim();
+  let m = u.match(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/embed\/|\/live\/)([\w-]{11})/);
+  if (m) return { kind: 'yt', embed: `https://www.youtube-nocookie.com/embed/${m[1]}?autoplay=1&rel=0&playsinline=1`, thumb: () => `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` };
+  m = u.match(/\/d\/([\w-]{20,})|[?&]id=([\w-]{20,})/);
+  if (m) { const id = m[1] || m[2]; return { kind: 'drive', embed: `https://drive.google.com/file/d/${id}/preview`, thumb: w => driveUrl(id, Math.min(w, 1000)) }; }
+  return { kind: 'link', embed: '', thumb: () => '' };
+}
+export const videoLinkOk = u => !!videoOf({ source: 'video', url: u })?.embed;
 export function imgSrc(p, w = 1200) {
   if (!p) return '';
+  if (isVideo(p)) return videoOf(p).thumb(w);
   if (p.url) return p.url;
   if (p.fileId) return driveUrl(p.fileId, w);
   return '';

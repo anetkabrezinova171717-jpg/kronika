@@ -3,7 +3,7 @@ import { CONFIG } from './config.js';
 import { DEMO } from './api.js';
 import {
   S, COLORS, gradeList, gradeOf, eventsOf, photosOfEvent, loosePhotos, photosOfGrade, albumPhotos,
-  imgSrc, cmPhoto, person, ids, classmates, coverOf, eventById, photoById, uploadPhoto, LS, vis, setProfilePhoto,
+  imgSrc, videoOf, cmPhoto, person, ids, classmates, coverOf, eventById, photoById, uploadPhoto, LS, vis, setProfilePhoto,
 } from './store.js';
 import { $, $$, esc, escBr, fmtDate, initials, scribble, ICON, pad2, openSheet, closeSheet, toast, shuffle } from './ui.js';
 
@@ -14,8 +14,9 @@ export function ph(p, { cls = '', r = 0, w = 1100, cap = true, attrs = '', style
   const by = p.source === 'classmate' && p.author ? `<span class="sticker">📷 ${esc(p.author)}</span>` : '';
   // malé fotky (např. náhledy ze starého webu) nenatahujeme do rozmazané velikosti
   if (p.w && p.w < 480) { cls += ' lowres'; style += `;max-width:${Math.round(Math.max(p.w * 1.7, 230))}px`; }
-  return `<figure class="ph ${cls} ${p.hidden ? 'is-hidden' : ''}" style="--r:${r}deg;--ar:${ar};${style}" data-photo="${esc(p.id)}" ${attrs}>${by}
-    <img loading="lazy" decoding="async" src="${esc(imgSrc(p, w))}" data-fid="${esc(p.fileId || '')}" alt="${esc(p.caption || '')}" onerror="__imgErr(this)">
+  const play = p.source === 'video' ? `<span class="ph-play" aria-label="Video">${ICON.play}</span>` : '';
+  return `<figure class="ph ${cls} ${p.hidden ? 'is-hidden' : ''} ${play ? 'is-video' : ''}" style="--r:${r}deg;--ar:${ar};${style}" data-photo="${esc(p.id)}" ${attrs}>${by}
+    <img loading="lazy" decoding="async" src="${esc(imgSrc(p, w))}" data-fid="${esc(p.fileId || '')}" alt="${esc(p.caption || '')}" onerror="__imgErr(this)">${play}
     ${cap && p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ''}</figure>`;
 }
 const AV_COLORS = [1, 2, 3, 4, 5, 6, 7, 8].map(n => COLORS[n]);
@@ -514,7 +515,7 @@ export function openLightbox(list, startId) {
   const lb = document.createElement('div');
   lb.className = 'lb';
   lb.innerHTML = `<button class="lb-x" aria-label="Zavřít">${ICON.x}</button>
-    <div class="lb-stage"><img alt=""></div>
+    <div class="lb-stage"><img alt=""><div class="lb-video" hidden></div></div>
     <button class="lb-nav l" aria-label="Předchozí">${ICON.left}</button><button class="lb-nav r" aria-label="Další">${ICON.right}</button>
     <div class="lb-info"></div>`;
   document.body.appendChild(lb);
@@ -525,8 +526,16 @@ export function openLightbox(list, startId) {
   const show = () => {
     const p = photoById(list[i]);
     if (!p) return;
+    const v = videoOf(p), vbox = $('.lb-video', lb);
+    vbox.innerHTML = ''; vbox.hidden = !v; img.hidden = !!v;
+    if (v) {
+      vbox.innerHTML = v.embed
+        ? `<iframe src="${esc(v.embed)}" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`
+        : `<a class="btn btn-yellow" href="${esc(p.url)}" target="_blank" rel="noopener">Přehrát video ${ICON.right}</a>`;
+    } else {
     img.src = imgSrc(p, 1800); img.dataset.fid = p.fileId || ''; delete img.dataset.fb;
     img.onerror = () => window.__imgErr(img);
+    }
     const ev = eventById(p.eventId);
     const gn = ev?.grade ?? p.grade;
     const people = ids(p.people).map(person).filter(Boolean);
@@ -542,7 +551,7 @@ export function openLightbox(list, startId) {
   const stage = $('.lb-stage', lb);
   img.onclick = () => { stage.classList.toggle('zoom'); stage.scrollTop = 0; };
   const go = d => { const j = i + d; if (j < 0 || j >= list.length) return; i = j; stage.classList.remove('zoom'); img.classList.remove('in'); show(); void img.offsetWidth; img.classList.add('in'); };
-  const close = () => { lb.classList.remove('open'); document.body.classList.remove('noscroll'); document.removeEventListener('keydown', key); setTimeout(() => lb.remove(), 250); };
+  const close = () => { $('.lb-video', lb).innerHTML = ''; lb.classList.remove('open'); document.body.classList.remove('noscroll'); document.removeEventListener('keydown', key); setTimeout(() => lb.remove(), 250); };
   const key = e => { if (e.key === 'Escape') close(); if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1); };
   document.addEventListener('keydown', key);
   $('.lb-x', lb).onclick = close;

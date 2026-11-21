@@ -1,7 +1,7 @@
 // ADMIN MÓD – správa celé kroniky bez úprav kódu
 import * as api from './api.js';
 import {
-  S, LS, COLORS, gradeList, gradeOf, eventsOf, photosOfEvent, albumPhotos, imgSrc, cmPhoto, person, ids, uid,
+  S, LS, COLORS, gradeList, gradeOf, eventsOf, photosOfEvent, albumPhotos, imgSrc, isVideo, videoLinkOk, cmPhoto, person, ids, uid,
   classmates, eventById, photoById, save, remove, uploadPhoto, load, quizCheck, inQuiz, photoGrade, inShow, hasFlag, withFlag,
 } from './store.js';
 import { $, $$, esc, fmtDate, ICON, scribble, openForm, toast, closeSheet } from './ui.js';
@@ -140,6 +140,16 @@ function uploadPanel() {
     <div class="field"><label>Autor</label><input name="author" value="Kronika" maxlength="60"></div>
     <button class="btn btn-ink btn-block" id="b-go">Nahrát</button>
     <div id="b-log" class="b-log"></div>
+  </form>
+  <form class="form card" id="vid" novalidate style="margin-top:16px">
+    <h3 style="margin:0">${ICON.video} Přidat video</h3>
+    <p class="fine">Vlož odkaz na video z <b>YouTube</b> (klidně neveřejné) nebo z <b>Google Disku</b>. Na Disku nastav u videa sdílení <b>„Kdokoli s odkazem“</b>, jinak ho ostatní nepřehrají. Video se ukáže mezi fotkami s ikonou ▶.</p>
+    <div class="field"><label>Odkaz na video</label><input name="url" type="url" placeholder="https://youtu.be/… nebo https://drive.google.com/file/d/…" required></div>
+    <div class="field"><label>Ročník</label><select name="grade">${gradeOpts().map(o => `<option value="${o.v}">${esc(o.l)}</option>`).join('')}</select></div>
+    <div class="field"><label>Událost <em>(nepovinné)</em></label><select name="eventId"></select></div>
+    <div class="field"><label>Popisek <em>(nepovinné)</em></label><input name="caption" maxlength="200"></div>
+    <div class="field"><label>Autor</label><input name="author" value="Kronika" maxlength="60"></div>
+    <button class="btn btn-ink btn-block" id="v-go">Přidat video</button>
   </form>`;
 }
 function mountUpload() {
@@ -151,6 +161,26 @@ function mountUpload() {
     f.eventId.disabled = !evs.length;
   };
   f.grade.onchange = fill; fill();
+  const vf = $('#vid');
+  const vfill = () => {
+    const evs = Number(vf.grade.value) ? eventsOf(Number(vf.grade.value)) : [];
+    vf.eventId.innerHTML = `<option value="">— bez události —</option>` + evs.map(e => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join('');
+    vf.eventId.disabled = !evs.length;
+  };
+  vf.grade.onchange = vfill; vfill();
+  vf.onsubmit = async e => {
+    e.preventDefault();
+    const url = vf.url.value.trim();
+    if (!videoLinkOk(url)) return toast('Tohle nevypadá jako odkaz na YouTube nebo Google Disk', 'err');
+    const btn = $('#v-go'); btn.disabled = true;
+    try {
+      const ev = eventById(vf.eventId.value);
+      await save('photos', { id: uid('v'), fileId: '', url, source: 'video', grade: ev ? ev.grade : Number(vf.grade.value), eventId: vf.eventId.value,
+        caption: vf.caption.value.trim(), author: vf.author.value.trim(), people: '', order: '', hidden: false, createdAt: new Date().toISOString(), w: 16, h: 9 });
+      toast('Video přidáno'); vf.url.value = ''; vf.caption.value = '';
+    } catch (err) { toast(err.message, 'err'); }
+    btn.disabled = false;
+  };
   $('#b-files').onchange = e => { $('#b-count').textContent = e.target.files.length ? `Vybráno ${e.target.files.length} fotek` : 'Vybrat fotky'; };
   f.onsubmit = async e => {
     e.preventDefault();
@@ -586,22 +616,25 @@ export function editEvent(id, gradeForNew) {
 export function editPhoto(id) {
   const p = photoById(id);
   if (!p) return;
+  const vid = isVideo(p);
   openForm({
-    title: 'Upravit fotku',
+    title: vid ? 'Upravit video' : 'Upravit fotku',
     values: { ...p, quiz: hasFlag(p, 'yes') ? 'yes' : '', show: hasFlag(p, 'show') },
     intro: `<div class="form-prev">${thumb(p, 700)}<p class="fine">${p.source === 'classmate' ? `👥 Přidal/a spolužák: <b>${esc(p.author || '?')}</b>` : '⭐ Obsah administrátora'} · ${esc(fmtDate(p.createdAt))}</p></div>`,
     fields: [
+      ...(vid ? [{ k: 'url', label: 'Odkaz na video', help: 'YouTube nebo Google Disk (sdílení „Kdokoli s odkazem“).' }] : []),
       { k: 'grade', label: 'Ročník', type: 'select', options: gradeOpts() },
       { k: 'eventId', label: 'Událost', type: 'select', options: eventOpts(), help: 'Když vybereš událost, fotka se přesune do jejího ročníku.' },
       { k: 'caption', label: 'Popisek', opt: true },
       { k: 'author', label: 'Autor / kdo přidal', opt: true },
       { k: 'people', label: 'Kdo je na fotce', type: 'people', options: peopleOpts(), opt: true, help: 'Fotky s 1–6 označenými lidmi se použijí ve hře „Kdo je na fotce?“.' },
       { k: 'order', label: 'Pořadí v události', type: 'number', opt: true, help: 'Nižší číslo = dřív. První fotka je velká.' },
-      { k: 'quiz', label: 'Ve hře „Poznej rok“', type: 'select', options: [{ v: '', l: 'Ne' }, { v: 'yes', l: 'Ano, použít ve hře' }], help: quizCheck(p).ok ? '⭐ Návrh: jsou na ní lidé a datum sedí do školního roku.' : `Automatický návrh: ne (${quizCheck(p).why}).` },
-      { k: 'show', label: 'Promítání', type: 'check', text: 'Promítat tuto fotku' },
+      ...(vid ? [] : [{ k: 'quiz', label: 'Ve hře „Poznej rok“', type: 'select', options: [{ v: '', l: 'Ne' }, { v: 'yes', l: 'Ano, použít ve hře' }], help: quizCheck(p).ok ? '⭐ Návrh: jsou na ní lidé a datum sedí do školního roku.' : `Automatický návrh: ne (${quizCheck(p).why}).` },
+      { k: 'show', label: 'Promítání', type: 'check', text: 'Promítat tuto fotku' }]),
       { k: 'hidden', label: 'Skrýt', type: 'check', text: 'Skrýt fotku (ostatní ji neuvidí)' },
     ],
     onSubmit: async v => {
+      if (vid && !videoLinkOk(v.url)) throw new Error('Tohle nevypadá jako odkaz na YouTube nebo Google Disk');
       const ev = eventById(v.eventId);
       const { show, ...rest } = v;
       rest.quiz = withFlag({ quiz: withFlag(p, 'yes', v.quiz === 'yes') }, 'show', show);
@@ -609,7 +642,7 @@ export function editPhoto(id) {
       done();
     },
     onDelete: async () => { await remove('photos', p.id); done(); },
-    deleteText: api.DEMO ? 'Smazat fotku?' : 'Smazat fotku? Soubor se přesune do koše na Google Disku (30 dní jde obnovit).',
+    deleteText: vid ? 'Smazat video z kroniky? (Samotné video na YouTube / Disku zůstane.)' : api.DEMO ? 'Smazat fotku?' : 'Smazat fotku? Soubor se přesune do koše na Google Disku (30 dní jde obnovit).',
     mount(form) {
       // změna ročníku → nabídni jen události z daného ročníku
       const sync = () => {

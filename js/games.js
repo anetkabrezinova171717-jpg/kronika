@@ -39,7 +39,7 @@ function build(id) {
   }
   if (id === 'fotka') {
     const items = [];
-    for (const p of vis(S.db.photos).filter(p => p.source !== 'profile')) {
+    for (const p of vis(S.db.photos).filter(p => p.source !== 'profile' && p.source !== 'video')) {
       const who = ids(p.people).map(person).filter(Boolean);
       if (who.length && who.length <= 6 && cm.length - who.length >= 3) items.push({ p, who });
     }
